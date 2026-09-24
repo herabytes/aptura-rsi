@@ -1,0 +1,209 @@
+<section class="a-section">
+  <h2 class="a-section__title">The one-paragraph version</h2>
+  <p class="a-prose">Observability tells you <em>what</em> failures are happening. This is a record of the step after that: taking one failure cluster from a weak customer-service agent (GLM-5.3-flash under OpenHands, on the τ³ banking benchmark), finding its mechanism, testing four interventions with predictions written first, and then watching the winning one only partly transfer. The loop we ran by hand — trajectory → cluster → hypothesis → intervention → prediction → replicated comparison → held-out test → keep/revise/reject/upgrade-the-model — is the thing worth building tooling for.</p>
+  <div class="a-grid">
+    <div class="a-metric"><div class="a-metric__label">Turn-1 survival, tuning set (4 tasks × 5)</div><div class="a-metric__value">10/20 → 20/20</div><div class="a-metric__delta">v4 wording → v9 verb-binding · replicated proxy result</div></div>
+    <div class="a-metric"><div class="a-metric__label">Turn-1 survival, held-out (22 valid tasks)</div><div class="a-metric__value">17/22</div><div class="a-metric__delta">v9 · 5 deaths, 3 on tasks never tuned on · held-out result</div></div>
+    <div class="a-metric"><div class="a-metric__label">Full τ³ pass rate</div><div class="a-metric__value">5/20</div><div class="a-metric__delta">v9 · v4 5/22 · baseline 3/24 · not improved</div></div>
+  </div>
+</section>
+
+<section class="a-section">
+  <h2 class="a-section__title">1 · Why the score was not enough</h2>
+  <p class="a-prose">HealthBench looked like the harder benchmark and turned out to be the easier one to curate for: its rubric says which weighted points were missed, so one rewrite of the skill moved three tasks from ~0.37 to ~0.69. τ³ scores a task 0 or 1 against an exact expected action sequence. Every failure — a search loop, a wrong product, a skipped step, a message that never reached the customer — scores the same 0. The final score carried no information about <em>which</em> failure had occurred.</p>
+  <p class="a-prose">The first trajectory we watched live (task 059, “recommend a card and a savings account”) made this concrete: <strong>43 near-identical <code>KB_search</code> calls</strong>, zero questions to the customer, and the token budget gone. So the curator built her own measurements from the trajectory: searches per run, customer messages before the first search, repeats of the same top hit, whether verification was ever logged. Those proxy metrics, not the score, are what every later conclusion rests on.</p>
+  <figure class="a-panel" data-a-chart="bar" data-a-chart-label="Task 059 proxy metrics across skill versions">
+    <figcaption class="a-panel__title">Task 059: the score stayed 0 while the interaction changed</figcaption>
+    <div class="a-table-scroll">
+      <table class="a-table">
+        <caption class="a-visually-hidden">Proxy metrics for task 059 by skill version</caption>
+        <thead><tr><th scope="col">Version</th><th scope="col" data-numeric>KB_search calls</th><th scope="col" data-numeric>Customer questions before first search</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">baseline</th><td data-numeric>43</td><td data-numeric>0</td></tr>
+          <tr><th scope="row">v1 (protocol rules)</th><td data-numeric>43</td><td data-numeric>0</td></tr>
+          <tr><th scope="row">v2 (environment facts)</th><td data-numeric>9</td><td data-numeric>1</td></tr>
+          <tr><th scope="row">v4 (+ provenance rule)</th><td data-numeric>28</td><td data-numeric>1</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </figure>
+  <p class="a-section__note">v2 scored 0 on 059 because it recommended Bronze instead of Silver after comparing only the 3–4 products its searches happened to return. v4 (“a claim about the whole category needs the whole list as its source”) passed 059 and, unexpectedly, 050. Fixing one mechanism exposed the next; there was no universal fix.</p>
+</section>
+
+<section class="a-section">
+  <h2 class="a-section__title">2 · The biggest cluster: the customer never saw the first message</h2>
+  <p class="a-prose">Across the 22 valid tasks, the most common death was at step 4: <code>start_conversation</code> returns the customer’s opening line, and the model writes “please verify your identity” as a <strong>plain assistant reply</strong> instead of a <code>send_message_to_user</code> tool call. The harness reads a plain reply as “agent finished”, the customer never receives it, and the episode ends with nothing done. Under baseline this killed 8 of 12 documented runs; under v4, 4 of 12 — even though v4’s skill already stated that the customer only sees text sent through the tool.</p>
+  <p class="a-prose">Because this is a ~50% coin flip, one run per task cannot detect a change. We measured it as a <em>rate</em>: 4 tasks (018, 044, 050, 101) × 5 replicates per wording, each run killed as soon as the first customer-facing turn resolved.</p>
+  <figure class="a-panel" data-a-chart="bar" data-a-chart-max="20" data-a-chart-label="Turn-1 survivals out of 20 by skill wording">
+    <figcaption class="a-panel__title">Turn-1 survival by wording (same 4 tasks × 5 replicates; v6 is /18)</figcaption>
+    <div class="a-table-scroll">
+      <table class="a-table">
+        <caption class="a-visually-hidden">Turn-1 survival count by arm</caption>
+        <thead><tr><th scope="col">Arm</th><th scope="col" data-numeric>Survived</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">v4 fact</th><td data-numeric>10</td></tr>
+          <tr><th scope="row">v4, harness header removed</th><td data-numeric>10</td></tr>
+          <tr><th scope="row">v5 first-action anchor</th><td data-numeric>9</td></tr>
+          <tr><th scope="row">v7b emphasis only</th><td data-numeric>5</td></tr>
+          <tr><th scope="row">v7c v6 minus anti-guidance clause</th><td data-numeric>10</td></tr>
+          <tr><th scope="row">v7a content, calm</th><td data-numeric>13</td></tr>
+          <tr><th scope="row">v6 content + emphasis (/18)</th><td data-numeric>14</td></tr>
+          <tr><th scope="row">v7a rerun (raw-dump run)</th><td data-numeric>15</td></tr>
+          <tr><th scope="row">v9 verb binding</th><td data-numeric>20</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </figure>
+  <div class="a-callout a-callout--risk">
+    <strong>Two tempting stories that the data killed.</strong> (a) The OpenHands harness wraps every skill in a header saying it may be used “for coding style, project conventions, and documentation guidance only”. Removing that header from the prompt changed nothing: 10/20 → 10/20. (b) Saying it louder — “HARD CONSTRAINT, not style guidance. This is not a preference.” with no new information — was the <em>worst</em> arm at 5/20. Twenty-run arms wobble by ±3–4 (v7c at 10/20 shares v6’s content), so the header result should be read with that width too — but neither story survived.
+  </div>
+</section>
+
+<section class="a-section">
+  <h2 class="a-section__title">3 · What the hidden reasoning showed</h2>
+  <p class="a-prose">The rendered agent log shows identical steps for deaths and survivals. Dumping the raw upstream response exposed GLM’s <code>reasoning</code> field. On the v7a rerun: runs that emitted no reasoning went straight to the tool (8/8 survived); runs that reasoned survived 7/12, and all five deaths were there. Every death’s reasoning planned the <em>content</em> and never mentioned the channel.</p>
+  <div class="a-grid a-grid--halves">
+    <div class="a-panel">
+      <div class="a-panel__head"><h3 class="a-panel__title">Died · v7a, task 018, replicate 4</h3></div>
+      <dl class="a-meta-list">
+        <div><dt>Customer</dt><dd>“Hi, I've been looking at my credit card statements and I think some of my cash back rewards might be wrong. Can you help me check?”</dd></div>
+        <div><dt>Hidden reasoning</dt><dd>“The customer wants to check cash back rewards. I need to verify identity first. Ask for name and two identity fields.”</dd></div>
+        <div><dt>Emitted</dt><dd><strong>Plain assistant reply</strong>, <code>finish_reason: stop</code> — “I'd be happy to help you check your cash back rewards! Before I can access your account details, I'll need to verify your identity…” Episode ends; customer saw nothing.</dd></div>
+      </dl>
+    </div>
+    <div class="a-panel">
+      <div class="a-panel__head"><h3 class="a-panel__title">Survived · v9, task 018, replicate 4</h3></div>
+      <dl class="a-meta-list">
+        <div><dt>Customer</dt><dd>Same opening line.</dd></div>
+        <div><dt>Hidden reasoning</dt><dd>“Ask for name + verification details before accessing account.”</dd></div>
+        <div><dt>Emitted</dt><dd><strong><code>send_message_to_user</code></strong> tool call, <code>finish_reason: tool_calls</code> — “I'd be happy to help you check your cash back rewards. Before I can look at your account details, I'll need to verify your identity…” Customer replies with name, DOB, phone; run continues.</dd></div>
+      </dl>
+    </div>
+  </div>
+  <p class="a-prose">Same customer line, same plan, same sentence — different encoding. The rule in the skill was a fact about the world (“the customer only receives the tool’s argument”), weighed against a plan that was only about words. v9 adds three sentences that restate the rule in the plan’s own vocabulary: <em>“ask the customer”, “tell the customer”, “greet”, “request verification” all name the same single action, a <code>send_message_to_user</code> call. When your plan ends in “let me ask them…”, the next thing you emit is that tool call, not the sentence.</em> Preregistered prediction: ≥17/20, deaths concentrated in reasoning runs. Result: 20/20, with 16 of 20 still reasoning in exactly the old words.</p>
+</section>
+
+<section class="a-section">
+  <h2 class="a-section__title">4 · Then the held-out test</h2>
+  <p class="a-prose">Turn-1 survival on 4 tuning tasks is a proxy. The real question is the 22 valid τ³ tasks run end to end. That run finished; it is the most important negative result here.</p>
+  <div class="a-table-scroll">
+    <table class="a-table">
+      <caption>v9 end to end over the 22 valid tasks (8 of 30 dataset tasks excluded as harness-invalid: the customer simulator crashes on a tool with an empty schema)</caption>
+      <thead><tr><th scope="col">Measure</th><th scope="col">baseline</th><th scope="col">v4</th><th scope="col">v9 verb binding</th><th scope="col">Evidence label</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Full pass</th><td>3/24</td><td>5/22 (006, 019, 035, 050, 059)</td><td>5/20 (006, 021, 032, 099, 100); 019 and 059 hit the token budget mid-run, unscored</td><td>held-out result</td></tr>
+        <tr><th scope="row">Turn-1 plain-reply deaths</th><td>8/12 documented</td><td>4/12 documented</td><td>5/22 (029, 036, 047, 050, 057)</td><td>held-out result</td></tr>
+        <tr><th scope="row">Search loops (&gt;30 searches)</th><td>059: 43</td><td>059: 28</td><td>019: 41 · 059: 37 (both unscored)</td><td>held-out result</td></tr>
+        <tr><th scope="row">Budget-exhausted / no trajectory</th><td>several (4M pool)</td><td>0</td><td>2</td><td>infrastructure / budget, not a learner failure</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="a-prose">Reading: the verb binding roughly halved turn-1 deaths on held-out tasks (~50% → 23%) but did not eliminate them — task 050 was 5/5 in the tuning set and died at turn 1 here with the same content-only reasoning (“I need to verify identity first. Ask for name and two identity fields.”). And getting past turn 1 exposed the downstream mechanisms again: 019 and 059, which v4 had passed, went back into search loops and ran out of budget. v9 passed four tasks v4 had not, and lost two v4 had. Net pass rate: unchanged.</p>
+  <div class="a-callout a-callout--decision">
+    <strong>Decision on this intervention: retain, but with its scope stated.</strong> It is a real, replicated fix for one mechanism on one class of harness (tool-mediated messaging), it does not fully transfer, and it does not move the benchmark by itself because the other mechanisms are untouched. That is exactly the point at which a team should ask whether the next hour goes into the next mechanism or into a larger model.
+  </div>
+</section>
+
+<section class="a-section">
+  <h2 class="a-section__title">5 · Workbench: the intervention record</h2>
+  <p class="a-section__note">A read-only view over the same run artifacts. Select an intervention to see its record; the table below filters to the arms that belong to it.</p>
+  <div data-a-tabs>
+    <div role="tablist" aria-label="Interventions">
+      <button role="tab" id="tab-header" aria-controls="rec-header" aria-selected="true">Remove harness header</button>
+      <button role="tab" id="tab-emph" aria-controls="rec-emph" aria-selected="false" tabindex="-1">Emphasis only</button>
+      <button role="tab" id="tab-content" aria-controls="rec-content" aria-selected="false" tabindex="-1">State the consequence</button>
+      <button role="tab" id="tab-verb" aria-controls="rec-verb" aria-selected="false" tabindex="-1">Bind the verbs (v9)</button>
+    </div>
+    <div role="tabpanel" id="rec-header" aria-labelledby="tab-header">
+      <dl class="a-meta-list">
+        <div><dt>Failure</dt><dd>Plain reply instead of <code>send_message_to_user</code> at turn 1 (cluster A; 4/12 v4 runs, 8/12 baseline)</dd></div>
+        <div><dt>Hypothesis</dt><dd>The harness’s “coding style… guidance only” wrapper licenses the model to treat the skill as optional</dd></div>
+        <div><dt>Intervention</dt><dd>Harness change: strip the <code>REPO_CONTEXT</code>/<code>UNTRUSTED_CONTENT</code> header; v4 wording unchanged</dd></div>
+        <div><dt>Prediction</dt><dd>If the frame is the cause, v4-without-header ≈ v6 (~14/20); if ~10/20, the header is not the cause</dd></div>
+        <div><dt>Evidence</dt><dd>10/20 vs v4-with-header 10/20 · <span class="a-status" data-state="done">replicated proxy result</span></dd></div>
+        <div><dt>Transfer</dt><dd>Not tested; not needed</dd></div>
+        <div><dt>Decision</dt><dd><strong>Reject.</strong> Header is real but not causal; earlier causal write-up withdrawn</dd></div>
+        <div><dt>Cost</dt><dd>20 runs killed at step 4, ~10 min; learner GLM-5.3-flash, simulator Claude Sonnet 4.6</dd></div>
+      </dl>
+    </div>
+    <div role="tabpanel" id="rec-emph" aria-labelledby="tab-emph" hidden>
+      <dl class="a-meta-list">
+        <div><dt>Failure</dt><dd>Same cluster A</dd></div>
+        <div><dt>Hypothesis</dt><dd>The rule is under-weighted; louder framing raises obedience</dd></div>
+        <div><dt>Intervention</dt><dd>v4 sentence + “HARD CONSTRAINT, not style guidance… This is not a preference.” No new information</dd></div>
+        <div><dt>Prediction</dt><dd>If emphasis carries v6’s gain, ≈14/20</dd></div>
+        <div><dt>Evidence</dt><dd>5/20 · all 15 deaths the usual plain verification request · <span class="a-status" data-state="done">replicated proxy result</span></dd></div>
+        <div><dt>Transfer</dt><dd>Not tested</dd></div>
+        <div><dt>Decision</dt><dd><strong>Reject.</strong> Emphasis does not improve obedience and may hurt</dd></div>
+      </dl>
+    </div>
+    <div role="tabpanel" id="rec-content" aria-labelledby="tab-content" hidden>
+      <dl class="a-meta-list">
+        <div><dt>Failure</dt><dd>Same cluster A</dd></div>
+        <div><dt>Hypothesis</dt><dd>The model lacks the consequence and the timing: that a plain reply ends the episode, and that the very first reply after <code>start_conversation</code> is itself a tool call</dd></div>
+        <div><dt>Intervention</dt><dd>v6 (with emphasis) and v7a (same content, calm prose)</dd></div>
+        <div><dt>Prediction</dt><dd>v7a ≈ v6 if content carries the effect</dd></div>
+        <div><dt>Evidence</dt><dd>v6 14/18, v7a 13/20 and 15/20 on rerun, v7c 10/20 · <span class="a-status" data-state="done">replicated proxy result</span>, ±3–4 noise</dd></div>
+        <div><dt>Transfer</dt><dd>Not run end to end</dd></div>
+        <div><dt>Decision</dt><dd><strong>Revise</strong> — partial effect; hidden-reasoning dump ordered to find the residual</dd></div>
+      </dl>
+    </div>
+    <div role="tabpanel" id="rec-verb" aria-labelledby="tab-verb" hidden>
+      <dl class="a-meta-list">
+        <div><dt>Failure</dt><dd>Same cluster A, residual 5/20 under v7a; all 5 deaths in runs that emitted reasoning</dd></div>
+        <div><dt>Hypothesis</dt><dd>The model plans what to say but not how the customer receives it; “ask the customer” resolves to the chat default</dd></div>
+        <div><dt>Intervention</dt><dd>v7a + “‘ask/tell/greet/request verification’ all name one action: a <code>send_message_to_user</code> call”</dd></div>
+        <div><dt>Prediction</dt><dd>≥17/20; deaths concentrated in reasoning runs; planned content unchanged</dd></div>
+        <div><dt>Evidence</dt><dd>20/20, 16 with reasoning, reasoning text unchanged · <span class="a-status" data-state="done">replicated proxy result</span></dd></div>
+        <div><dt>Transfer</dt><dd>22 valid tasks: turn-1 deaths 5/22; full pass 5/20 (+2 budget-exhausted) vs v4 5/22 · <span class="a-status" data-state="at-risk">held-out: partial</span></dd></div>
+        <div><dt>Decision</dt><dd><strong>Retain with stated scope;</strong> open question whether to fix the next mechanism (search loops on 019/059) or compare against a larger learner</dd></div>
+        <div><dt>Cost</dt><dd>20 turn-1 runs ~10 min; 22 end-to-end runs ~45 min at 4 concurrent, learner budget exhausted on 2</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <h3 class="a-section__title">All arms</h3>
+  <label class="a-prose">Filter by evidence label
+    <select data-a-filter="#arms-table" data-a-filter-key="label">
+      <option value="">All</option>
+      <option value="exploratory">exploratory</option>
+      <option value="replicated">replicated proxy result</option>
+      <option value="heldout">held-out result</option>
+      <option value="infra">infrastructure failure</option>
+    </select>
+  </label>
+  <div class="a-table-scroll">
+    <table class="a-table" id="arms-table">
+      <caption class="a-visually-hidden">Every experiment arm with counts and evidence label</caption>
+      <thead><tr><th scope="col">Arm</th><th scope="col">What changed</th><th scope="col" data-numeric>Tasks</th><th scope="col" data-numeric>Runs</th><th scope="col">Result</th><th scope="col">Evidence label</th></tr></thead>
+      <tbody>
+        <tr data-label="exploratory"><td>tau v1</td><td>protocol rules from task text</td><td data-numeric>3</td><td data-numeric>3</td><td>0/3; 059 search loop unchanged (43)</td><td>exploratory</td></tr>
+        <tr data-label="exploratory"><td>tau v2</td><td>3 environment facts</td><td data-numeric>2</td><td data-numeric>2</td><td>0/2; 059 searches 43→9, asked first</td><td>exploratory</td></tr>
+        <tr data-label="heldout"><td>baseline</td><td>no skill</td><td data-numeric>24</td><td data-numeric>24</td><td>3/24</td><td>held-out result</td></tr>
+        <tr data-label="heldout"><td>tau v4</td><td>+ provenance rule</td><td data-numeric>22</td><td data-numeric>22</td><td>5/22</td><td>held-out result</td></tr>
+        <tr data-label="infra"><td>tasks 034 083 085 087 089 091 093 094</td><td>—</td><td data-numeric>8</td><td data-numeric>—</td><td>customer simulator crashes on empty tool schema; excluded</td><td>infrastructure failure</td></tr>
+        <tr data-label="replicated"><td>t1 v4</td><td>fact wording</td><td data-numeric>4</td><td data-numeric>20</td><td>10/20 turn-1</td><td>replicated proxy result</td></tr>
+        <tr data-label="replicated"><td>t1 v4 no-header</td><td>harness header stripped</td><td data-numeric>4</td><td data-numeric>20</td><td>10/20</td><td>replicated proxy result</td></tr>
+        <tr data-label="replicated"><td>t1 v5</td><td>first-action anchor</td><td data-numeric>4</td><td data-numeric>20</td><td>9/20</td><td>replicated proxy result</td></tr>
+        <tr data-label="replicated"><td>t1 v6</td><td>consequence + emphasis</td><td data-numeric>4</td><td data-numeric>18</td><td>14/18 (2 unresolved when stopped)</td><td>replicated proxy result</td></tr>
+        <tr data-label="replicated"><td>t1 v7a</td><td>consequence, calm</td><td data-numeric>4</td><td data-numeric>40</td><td>13/20, rerun 15/20</td><td>replicated proxy result</td></tr>
+        <tr data-label="replicated"><td>t1 v7b</td><td>emphasis only</td><td data-numeric>4</td><td data-numeric>20</td><td>5/20</td><td>replicated proxy result</td></tr>
+        <tr data-label="replicated"><td>t1 v7c</td><td>v6 minus anti-guidance clause</td><td data-numeric>4</td><td data-numeric>20</td><td>10/20</td><td>replicated proxy result</td></tr>
+        <tr data-label="replicated"><td>t1 v9</td><td>verb binding</td><td data-numeric>4</td><td data-numeric>20</td><td>20/20</td><td>replicated proxy result</td></tr>
+        <tr data-label="heldout"><td>tau v9</td><td>verb binding, end to end</td><td data-numeric>22</td><td data-numeric>22</td><td>5/20 pass; turn-1 deaths 5/22; 2 budget-exhausted</td><td>held-out result</td></tr>
+        <tr data-label="infra"><td>60-run launch (v7 arms)</td><td>—</td><td data-numeric>4</td><td data-numeric>~10</td><td>Docker compose failures, no trajectory; relaunched, excluded from denominators</td><td>infrastructure failure</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="a-section">
+  <h2 class="a-section__title">6 · When is it cheaper to…</h2>
+  <dl class="a-meta-list">
+    <div><dt>Improve the skill</dt><dd>When the model is fixed (cost, latency, on-prem, or the benchmark says so) and the failure has one mechanism you can name. Here: one person-day by hand per mechanism, most of it deciding what to look at next. Worked for turn 1; did not touch search loops or partial-list recommendations.</dd></div>
+    <div><dt>Use a larger model</dt><dd>When the mechanism is “the model plans content but not channel” or “compares the first few results instead of the list” — a stronger model puts those in the plan for free, and every downstream box in the causal chain disappears. For this cluster it is almost certainly the cheaper fix if the model is not fixed.</dd></div>
+    <div><dt>Change the harness</dt><dd>When the failure is a channel mismatch the harness could catch (a plain reply to a tool-only customer could be rejected and retried). The header, which looked like the harness lever, was not the cause; the guard would be.</dd></div>
+    <div><dt>Accept the failure</dt><dd>When the held-out test says the fix moved a proxy but not the outcome and the next mechanism is unrelated — as v9’s 5/20 says here — and the budget is better spent elsewhere.</dd></div>
+  </dl>
+  <p class="a-prose">The business value is not the v9 sentence. It is the loop that reached it and then told us where it stops: fewer expert hours reading traces, shorter feedback iterations, an upgrade to a larger model made only when a targeted fix has demonstrably failed to transfer, and a written reason to abandon an intervention rather than carrying it forward on hope.</p>
+</section>

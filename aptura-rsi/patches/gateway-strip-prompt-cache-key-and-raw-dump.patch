@@ -1,0 +1,24 @@
+diff --git a/src/skilltrainbench/gateway.py b/src/skilltrainbench/gateway.py
+index 7e4a04f..b96a209 100644
+--- a/src/skilltrainbench/gateway.py
++++ b/src/skilltrainbench/gateway.py
+@@ -341,6 +341,7 @@ def build_app(meter: BudgetMeter, *, client: httpx.AsyncClient, ledger: Ledger |
+         if not _auth_ok(request):
+             return JSONResponse({"error": {"type": "invalid_api_key"}}, status_code=401)
+         payload = await request.json()
++        payload.pop("prompt_cache_key", None)  # upstream (Runware) rejects this OpenAI-only field
+         tags = attempt_registry.resolve(request.headers.get("x-stbench-attempt")) if attempt_registry else {}
+         model = payload.get("model")
+         price = prices.get(model) if isinstance(model, str) else None
+@@ -426,6 +427,11 @@ def build_app(meter: BudgetMeter, *, client: httpx.AsyncClient, ledger: Ledger |
+                         data = {}
+                     model_resolved = data.get("model")
+                     cost_usd = _cost(r.headers, data.get("usage"), price)
++                    dump = os.environ.get("STBENCH_RAW_DUMP")
++                    if dump:
++                        with open(dump, "a") as fh:
++                            fh.write(json.dumps({"tags": tags, "n_msgs": len(payload.get("messages", [])),
++                                                 "choices": data.get("choices"), "usage": data.get("usage")}) + "\n")
+                     if r.status_code >= 400:
+                         meter.reconcile(res, 0, 0, 0)
+                         _log("upstream_error", r.status_code, reserved=reserved, effective_max=max_out,
